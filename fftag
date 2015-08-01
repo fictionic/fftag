@@ -1,0 +1,61 @@
+#!/bin/bash
+usage='usage:	tag <file> [<field1>=<value1> ... <fieldN>=<valueN>]'
+
+# parse input
+args=($@)
+numpairs=$(( ${#args[@]} - 1))
+i=0
+ffparams=()
+pairi="1"
+fields=()
+# first parameter is file to be tagged
+inputfile=$1
+if [ ! -f "$inputfile" ]; then
+	echo "input file $inputfile does not exist; aborting"
+	exit
+fi
+inputfile=$(readlink -f $inputfile)
+
+# if this is the only parameter, simply display the tags and exit
+if [ "$#" == 1 ]; then
+	ffprobe -v error -i "$inputfile" -show_entries format_tags -print_format default=noprint_wrappers=1 | sed 's/TAG:/	/'
+	exit
+fi
+
+# loop through rest of parameters
+while [ $pairi -le $numpairs ]; do
+	# rest of parameters are field=value pairs
+	pair=${args[$pairi]}
+	field=${pair/=*/}
+	value=${pair/$field=/}
+	#echo field: $field , value: $value
+	# make sure pair is properly formatted
+	if [ $field == $pair ]; then
+		echo "syntax error: pair $pairi \"$pair\" is not a field=value pair"
+		#continue
+		exit
+	fi
+	if [ $field == '' ]; then
+		echo syntax error: field cannot be empty
+		continue
+	fi
+	# for verifying results with ffprobe
+	fields[${#fields[@]}]=$field
+	# add pair to ffparams array
+	param=(-metadata "$field"="$value")
+	ffparams[$pairi]=${param[@]}
+	pairi=$(( $pairi + 1 ))
+done
+
+# run ffmpeg, write output to a temporary file, then move result back to given file
+outputformat=$(ffprobe -v error -i "$inputfile" -show_entries format=format_name -print_format default=noprint_wrappers=1:nokey=1)
+outputformat=${outputformat/,*/}
+outputfile=/tmp/$(basename "$inputfile").$outputformat
+touch $outputfile
+ffmpeg -v error -y -i "$inputfile" -codec copy ${ffparams[@]} "$outputfile"
+mv "$outputfile" "$inputfile"_new
+# verify results
+###eventually grep out only the changed tags
+echo New tags:
+ffprobe -v error -i "$inputfile"_new -show_entries format_tags -print_format default=noprint_wrappers=1 | sed 's/TAG:/	/'
+
