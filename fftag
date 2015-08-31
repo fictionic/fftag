@@ -1,57 +1,84 @@
 #!/bin/bash
-usage='usage:	tag <file> [<field1>=<value1> ... <fieldN>=<valueN>]'
+usage='usage:	fftag <file> [<field1>=<value1> ... <fieldN>=<valueN>]'
 
 # parse input
-args=($@)
-numpairs=$(( ${#args[@]} - 1))
-i=0
-ffparams=()
-pairi="1"
-fields=()
-# first parameter is file to be tagged
-inputfile=$1
-if [ ! -f "$inputfile" ]; then
-	echo "input file $inputfile does not exist; aborting"
+
+# needs to be more than one parameter
+if [[ "$#" == 0 ]]; then
+	echo $usage
 	exit
 fi
-inputfile=$(readlink -f $inputfile)
 
-# if this is the only parameter, simply display the tags and exit
-if [ "$#" == 1 ]; then
+
+# loop through parameters
+index=1
+ffparams=()
+fields=()
+while [[ $index -le $# ]]; do
+	eval arg=\$$index
+	# check to see if arg is an option
+	case $arg in
+	-i)
+		# next arg is inputfile
+		# make sure there is another arg
+		if [[ $index -lt $# ]]; then
+			# set inputfile and increment index
+			index=$(( $index + 1 ))
+			eval inputfile=\$$index
+		else
+			echo "syntax error: '-i' must be followed by filename"
+		fi
+		;;
+	-y)
+		# set yesno to yes
+		yesno=y
+		;;
+	*)
+		# arg must be a field=value pair
+		field=${arg/=*/}
+		value=${arg/$field=/}
+		# make sure it actually is
+		if [[ $field == $pair ]]; then
+			echo "syntax error: pair $index \"$pair\" is not a field=value pair"
+			continue
+		fi
+		if [[ $field == '' ]]; then
+			echo syntax error: field cannot be empty
+			continue
+		fi
+		# for verifying results with ffprobe
+		fields[${#fields[@]}]=$field
+		# add pair to ffparams array
+		param=(-metadata "$field"="$value")
+		ffparams[$pairi]=${param[@]}
+		;;
+	esac
+	index=$(( $index + 1 ))
+done
+
+echo \""${ffparams[@]}"\"
+echo "$inputfile"
+# if no pairs are given, simply display tags and exit
+if [[ "${#ffparams[@]}" == 0 ]]; then
+	echo TAGS:
 	ffprobe -v error -i "$inputfile" -show_entries format_tags -print_format default=noprint_wrappers=1 | sed 's/TAG:/	/'
 	exit
 fi
 
-# loop through rest of parameters
-while [ $pairi -le $numpairs ]; do
-	# rest of parameters are field=value pairs
-	pair=${args[$pairi]}
-	field=${pair/=*/}
-	value=${pair/$field=/}
-	#echo field: $field , value: $value
-	# make sure pair is properly formatted
-	if [ $field == $pair ]; then
-		echo "syntax error: pair $pairi \"$pair\" is not a field=value pair"
-		#continue
-		exit
-	fi
-	if [ $field == '' ]; then
-		echo syntax error: field cannot be empty
-		continue
-	fi
-	# for verifying results with ffprobe
-	fields[${#fields[@]}]=$field
-	# add pair to ffparams array
-	param=(-metadata "$field"="$value")
-	ffparams[$pairi]=${param[@]}
-	pairi=$(( $pairi + 1 ))
-done
+# make sure inputfile exists
+if [ ! -f "$inputfile" ]; then
+	echo "input file $inputfile does not exist; aborting"
+	exit
+fi
+inputfile=$(readlink -f "$inputfile")
+echo FILE:
+echo "	$inputfile"
 
 # run ffmpeg, write output to a temporary file, then move result back to given file
 outputformat=$(ffprobe -v error -i "$inputfile" -show_entries format=format_name -print_format default=noprint_wrappers=1:nokey=1)
 outputformat=${outputformat/,*/}
 outputfile=/tmp/$(basename "$inputfile").$outputformat
-touch $outputfile
+touch "$outputfile"
 ffmpeg -v error -y -i "$inputfile" -codec copy ${ffparams[@]} "$outputfile"
 mv "$outputfile" "$inputfile"_new
 # verify results
@@ -59,3 +86,13 @@ mv "$outputfile" "$inputfile"_new
 echo New tags:
 ffprobe -v error -i "$inputfile"_new -show_entries format_tags -print_format default=noprint_wrappers=1 | sed 's/TAG:/	/'
 
+if [[ $yesno == '' ]]; then
+	printf "Overwrite original file? (y/n)"
+	read yesno
+fi
+if [[ $yesno == y || $yesno == yes ]]; then
+	mv "$inputfile"_new "$inputfile"
+else
+	echo "not overwriting; exiting"
+	rm "$inputfile"_new
+fi
