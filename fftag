@@ -14,6 +14,7 @@ fi
 index=1
 ffparams=()
 fields=()
+prompt="no"
 while [[ $index -le $# ]]; do
 	eval arg=\$$index
 	# check to see if arg is an option
@@ -29,9 +30,9 @@ while [[ $index -le $# ]]; do
 			echo "syntax error: '-i' must be followed by filename"
 		fi
 		;;
-	-y)
-		# set yesno to yes
-		yesno=y
+	-p)
+		# prompt before overwriting file
+		prompt=y
 		;;
 	*)
 		# arg must be a field=value pair
@@ -49,15 +50,13 @@ while [[ $index -le $# ]]; do
 		# for verifying results with ffprobe
 		fields[${#fields[@]}]=$field
 		# add pair to ffparams array
-		param=(-metadata "$field"="$value")
-		ffparams[$pairi]=${param[@]}
+		ffparams[${#ffparams[@]}]="-metadata"
+		ffparams[${#ffparams[@]}]="$field"="$value"
 		;;
 	esac
 	index=$(( $index + 1 ))
 done
 
-echo \""${ffparams[@]}"\"
-echo "$inputfile"
 # if no pairs are given, simply display tags and exit
 if [[ "${#ffparams[@]}" == 0 ]]; then
 	echo TAGS:
@@ -79,18 +78,18 @@ outputformat=$(ffprobe -v error -i "$inputfile" -show_entries format=format_name
 outputformat=${outputformat/,*/}
 outputfile=/tmp/$(basename "$inputfile").$outputformat
 touch "$outputfile"
-ffmpeg -v error -y -i "$inputfile" -codec copy ${ffparams[@]} "$outputfile"
+ffmpeg -v error -y -i "$inputfile" -codec copy "${ffparams[@]}" "$outputfile"
 mv "$outputfile" "$inputfile"_new
 # verify results
 ###eventually grep out only the changed tags
 echo New tags:
 ffprobe -v error -i "$inputfile"_new -show_entries format_tags -print_format default=noprint_wrappers=1 | sed 's/TAG:/	/'
 
-if [[ $yesno == '' ]]; then
+if [[ $prompt == 'yes' ]]; then
 	printf "Overwrite original file? (y/n)"
 	read yesno
 fi
-if [[ $yesno == y || $yesno == yes ]]; then
+if [[ $prompt == 'no' || $yesno == y || $yesno == yes ]]; then
 	mv "$inputfile"_new "$inputfile"
 else
 	echo "not overwriting; exiting"
