@@ -3,7 +3,7 @@ all-purpose media file tagger written in bash that lets ffmpeg do the dirty work
 
 ## USAGE
 
-fftag [-p] -i \<file\> [\<field1=value1\> ... \<fieldN=valueN\>]
+`fftag [-p] -i <file> [<field1=value1> ... <fieldN=valueN>]`
 
 ### OPTIONS
 
